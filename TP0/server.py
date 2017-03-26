@@ -1,5 +1,10 @@
+#!/usr/bin/env python
+
+import sys
 import socket
 
+#from struct import pack
+import struct
 
 class Server():
 
@@ -7,40 +12,40 @@ class Server():
         self.HOST = '127.0.0.1'
         self.PORT = 51515
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((self.HOST,self.PORT))
         self.sock.listen(1)
         self.counter = 0
 
 
     def run(self):
-        print('Initializinf server')
         try:
             while True:
-                print('Waiting for connection')
                 conn,address = self.sock.accept()
-                print('Connection established to: ' + str(address))
-                data = conn.recv(1024)
+                conn.settimeout(3)
+
+                data = conn.recv(1)
                 if data == '+':
                     next_counter = (self.counter + 1)%1000
                 elif data == '-':
                     next_counter = (self.counter - 1)%1000
 
-                sent = conn.send(str(next_counter))
-                print(sent)
-                if sent != 1:
-                    print("error")
+                data_send = struct.pack('!i',next_counter)
+
+                sent = conn.send(data_send)
                 
-                data = conn.recv(3072)
-                
+                data = conn.recv(3)
+
                 if int(data) == next_counter:
                     self.counter = next_counter
-                    print('ok: '+str(self.counter))
-                else:
-                    print('not ok')
+
+                print('Counter: '+str(self.counter))
 
                 conn.close()
+        except KeyboardInterrupt:
+            pass
         except Exception as e:
-            print(e)
+            sys.stderr.write(str(e)+ '\n')
         finally:
             self.sock.close()
 
