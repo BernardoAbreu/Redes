@@ -1,8 +1,21 @@
 #!/usr/bin/env python
 
+
+# Nome: Bernardo de Almeida Abreu
+# Matricula: 2013007153
+
+# Esse codigo e implementado em python 2.7. Deve ser passado como parametro
+# da linha de comando 'inc' para incrementar o contador no servidor e 'dec'
+# para decrementar o mesmo.
+
+# Para rodar use:
+#     python client.py inc
+# ou
+#     python client.py dec
+
+
 import sys
 import socket
-
 import struct
 
 class Client():
