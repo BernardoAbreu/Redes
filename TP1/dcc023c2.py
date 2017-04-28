@@ -6,34 +6,31 @@ import socket
 #from struct import pack
 import struct
 import time
-import queue
-
+import Queue as queue
+import array
 import threading
 
 WRONG_CHKSUM = 1
 
-# def carry_around_add(a, b):
-#     c = a + b
-#     return(c &0xffff)+(c >>16)
+class ChecksumException(Exception):
+    pass
 
-# def checksum(msg):
-#     s =0
-#     for i in range(0, len(msg),2):
-#         w = ord(msg[i])+(ord(msg[i+1])<<8)
-#         s = carry_around_add(s, w)
-#     return~ s&0xffff
+SYNC = 0xDCC023C2
+
+
+def _carry_around_add(a, b):
+    c = a + b
+    return (c & 0xffff) + (c >> 16)
 
 def checksum(msg):
-    sum = 0
+    s = 0
+    if len(msg) % 2 == 1:
+            msg += "\0"
+    for i in range(0, len(msg),2):
+        w = (ord(msg[i]) << 8) + (ord(msg[i+1]))
+        s = _carry_around_add(s, w)
+    return (~s) & 0xffff
 
-    for c in msg:
-        sum += ord(c)
-        if (sum & 0xFFFF0000):
-            # carry occurred,
-            # so wrap around
-            sum &= 0xFFFF
-            sum+=1
-    return ~sum & 0xFFFF
 
 
 class Server():
@@ -46,7 +43,7 @@ class Server():
         self.sock.bind((self.HOST,self.PORT))
         self.sock.listen(1)
         self.counter = 0
-        self.sync = 0xDCC023C2
+        self.sync = SYNC
 
         # Queues for sharing data between threads
         self.send_queue = queue.Queue()
@@ -244,59 +241,55 @@ class Server():
 
 
 
-def build_frame(frame_id, data):
+def build_frame(frame_id, data = []):
     #header
-    sync = 0xDCC023C2
-    # chksum = checksum(data)
+
     length = len(data)
+    
+    header = struct.pack('!IIHHH', SYNC, SYNC, 0, length, frame_id)
+    # print ' '.join('%02X' % ord(x) for x in header)
 
-    sync = struct.pack("!q",sync)
-    length = struct.pack("!i",length)
-    print 'header: ' + header
-    print 'data: '  + data
-    print 'header+data: ' + header+data
-    chksum = checksum(header+data)
-    print "Checksum: 0x%04x" % chksum
-    header2 = struct.pack("!qqiii", sync,sync,chksum,length,frame_id)
-    # data = struct.pack("!%dB" % len(data), *data)
-    print header == header2
-    for b in bytearray(header2):
-        print '0x%04x '%b,
-    print 
-    return header,data
+    data = struct.pack("!%dB" % len(data), *data)
+
+    frame_str = header+data
+    # print frame_str
+
+    chcksum = checksum(frame_str)
+    # print "Checksum: 0x%04x" % chcksum
+    # print "Checksum: %d" % chcksum
+
+    frame = bytearray(frame_str)
+    frame[8] = chcksum >> 8
+    frame[9] = chcksum & 0xff
+    frame_str = str(frame)
+
+    # print frame_str
+    # chcksum = checksum(frame_str)
+    # print "Checksum: 0x%04x" % chcksum
+    # print "Checksum: %d" % chcksum
+
+    return frame_str
 
 
-def decode_header(header,d):
 
-    sync1,sync2,chksum,length,frame_id = struct.unpack("!qqiii", header)
-    data = struct.unpack("!%dB" % length, d)
-    print 'sync ' + str(sync1)
-    print 'sync ' + str(sync2)
-    print "Checksum: 0x%04x" % chksum
-    print "length: " + str(length)
-    print 'frame_id ' + str(frame_id)
-    print data
+def decode_header(syncless_header):
+    chksum,length,frame_id = struct.unpack('!HHH',syncless_header)
+    return chksum, length, frame_id
 
-    new_chksum = checksum(header+d)
-    print 'new_chksum: 0x%04x'%new_chksum 
-    print (chksum+new_chksum)%0xffff
-
-    # def error_check(self):
 
 def read_file(filename):
     file_byte_array = bytearray()
     with open(filename, "rb") as f:
-        byte = f.read(1)
-        count = 1
+        byte = f.read(1024)
         while byte != "":
             # Do stuff with byte.
-            file_byte_array.append(byte)
+            print(len(byte))
+            file_byte_array.extend(byte)
+            byte = f.read(1024)
 
-            main(bytearray(byte),count)
 
-            byte = f.read(1)
-            count += 1
     return file_byte_array
+
 
 
 def write_file(filename, file_byte_array):
@@ -305,13 +298,87 @@ def write_file(filename, file_byte_array):
         newFile.write(newFileByteArray)
 
 
-def main(byte, count):
-    data = struct.pack("%dB" % len(byte), *byte)
-    build_frame(count,data)
+
+def recv_valid_synced_frame():
+    last_sync = 0
+    try:
+        while True:
+            while current_sync == SYNC and last_sync == SYNC:
+                last_sync = current_sync
+                current_sync = self.sock.recv(4)
+
+            syncless_header = self.sock.recv(6)
+
+            data = ''
+            chksum, length, frame_id = decode_header(syncless_header)
+
+            if length:
+                data = self.sock.recv(length)
+
+            frame = last_sync + current_sync + chcksum + length + frame_id + data
+
+
+            if not checksum(frame):
+                return chksum, length, frame_id, data
+            else:
+                current_sync = 0
+
+    except Exception as e:
+        raise e
+
+
+
+def main():
+    frame_id = 0
+    last_frame_id = 1
+    last_checksum = 0
+    with open(filename, "rb") as f:
+        byte = f.read(1)
+
+        current_frame = build_frame(frame_id, byte)
+        send_frame(current_frame)
+        # Get send time
+
+        while byte != "":
+            # TODO Resend data after 1 sec
+            try:
+                # pass send time and frame
+                # store as instance value?
+                chksum, length, recv_frame_id, data = recv_valid_synced_frame()
+            except Exception as e:
+                print e
+
+            if length:  # Data
+                if recv_frame_id != last_frame_id or chksum == last_checksum:
+                    # New data
+                    if recv_frame_id != last_frame_id:
+                        last_frame_id = recv_frame_id
+                        last_checksum = chksum
+                        # Resend ACK
+                    
+                    ack_frame = build_frame(frame_id)
+                    send_frame(ack_frame)
+
+                    # write data
+                    # separate thread
+
+            else:  # ACK
+                print
+                # Check ACK
+
+                # if ACK valid:
+                # update frame_id
+                # read new byte
+                byte = f.read(1024)
+                # send new frame
+                # get send time
+
+
 
 
 if __name__ == '__main__':
     data = "dc c0 23 c2 dc c0 23 c2 00 00 00 04 00 00 01 02 03 04"
+    # data = "dc c0 23 c2 dc c0 23 c2 00 00 00 00 00 00"
 
     data = data.split()
     # print data
@@ -321,27 +388,71 @@ if __name__ == '__main__':
     print data
     print ' '.join('%02X' % ord(x) for x in data)
     print "Checksum: 0x%04x" % checksum(data)
-    # print "Checksum2: 0x%04x" % checksum2(data)
     print "Checksum: %d" % checksum(data)
-    # print "Checksum2: %d" % checksum2(data)
+    # first = checksum(data)
+    # print checksum(data)
+    # print ' '.join(format(ord(x), 'b') for x in data)
+    # data = bytearray(data)
+    # data[8] = first >> 8
+    # data[9] = first & 0xff
+    # print "0x%02x"%data[8]
+    # print "0x%02x"%data[9]
+    # data = str(data)
+    # print ' '.join(format(ord(x), 'b') for x in data)
+    # print data
 
+    # # data = bytearstruct.pack('!H',checksum(data))
+    # # print ' '.join(format(ord(x), 'b') for x in data)
+    
+    # second = checksum(data)
+    # print second
+    
+    # frame = build_frame(0,bytearray([0x01, 0x02, 0x03, 0x04]))
 
+    # sync1, sync2, chksum,length,frame_id = struct.unpack('!IIHHH',frame[:14])
+    # print '%02X' % sync1
+    # print '%02X' % sync2
+    # print '0x%02x' % chksum
+    # print length
+    # print frame_id
+    # print decode_header(frame[8:14])
+    # print checksum(frame)
+
+    # frame = build_frame(0)
+    # sync1, sync2, chksum,length,frame_id = struct.unpack('!IIHHH',frame[:14])
+    # print '%02X' % sync1
+    # print '%02X' % sync2
+    # print '0x%02x' % chksum
+    # print length
+    # print frame_id
+    # print decode_header(frame[8:14])
+    # print checksum(frame)
+    # print ' '.join('%02X' % ord(x) for x in frame)
+
+    # print "{0:b}".format(second)
+    # print "{0:b}".format(first)
+    # print "{0:b}".format(first+second)
+
+    # print "Checksum: %d" % checksum('\xFA\xFC')
+    # print "Checksum: %d" % checksum2('\xFA\xFC')
+    # checj('\xFA\xFC')
+    # checksum2(data)
     # sync = 0xDCC023C2
     # print sync
     # d = struct.pack("!QQ", sync,sync)
     # print d
     # dd = struct.unpack('!QQ',d)
     # print dd
-    data = 'jello'
-    header,d = build_frame(1,data)
-    print d == data
-    # h = bytearray(header)
-    # print len(h)
-    # for b in h:
-    #     print b
-    # # print d
-    decode_header(header,d)
-    # s = 'jello'
+    # data = 'jello'
+    # header,d = build_frame(1,data)
+    # print d == data
+    # # h = bytearray(header)
+    # # print len(h)
+    # # for b in h:
+    # #     print b
+    # # # print d
+    # decode_header(header,d)
+    # # s = 'jello'
     
     # # s = "ABCD"
     # b = bytearray(s)
@@ -358,4 +469,4 @@ if __name__ == '__main__':
     # print ' '.join('%02X' % ord(x) for x in data)
     # print "Checksum: 0x%04x" % checksum(data)
     # struct.unpack("!I%ds" % length, length, data)
-    # ba = read_file('copy')
+    ba = read_file('copy')
