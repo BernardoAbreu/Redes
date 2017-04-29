@@ -10,10 +10,12 @@ import time
 
 SYNC = 0xDCC023C2
 
-PACKET_SIZE = 256
+PACKET_SIZE = 1024
 
 PASSIVE = 0
 ACTIVE = 1
+
+MAXTIMEOUT = 1
 
 def _carry_around_add(a, b):
     c = a + b
@@ -95,13 +97,25 @@ def decode_header(syncless_header):
     return chksum, length, frame_id, ack, end
 
 
-def recv_valid_synced_frame(sock):
+def get_timeout(start_time):
+    current_time = time.time()
+    timedelta = current_time - start_time
+
+    return MAXTIMEOUT - (0 if timedelta >= MAXTIMEOUT else timedelta)
+
+def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
     last_sync = 0
     current_sync = 0
     current_sync_unpacked = 0
     last_sync_unpacked = 0
-    try:
-        while True:
+
+    while True:
+        if resend_frame:
+            sock.settimeout(get_timeout(start_time))
+        else:
+            sock.settimeout(None)
+
+        try:
             while current_sync_unpacked != SYNC or last_sync_unpacked != SYNC:
                 last_sync = current_sync
                 last_sync_unpacked = current_sync_unpacked
@@ -126,8 +140,13 @@ def recv_valid_synced_frame(sock):
                 current_sync = 0
                 current_sync_unpacked = 0
 
-    except Exception as e:
-        raise e
+        except socket.timeout:
+            if resend_frame:
+                print('TIMEOUT: Resending frame')
+                sock.send(resend_frame)
+                start_time = time.time()
+        except Exception as e:
+            raise e
 
 
 
@@ -146,47 +165,53 @@ def main(input_file, output_file, sock):
 
             current_frame = build_frame(frame_id,bytearray(byte), end = (not send_active))
             sock.send(current_frame)
-                # Get send time
+            # Get send time
+            send_time = time.time()
 
-            while send_active or recv_active:
-                print 'Start of loop: ' + str(send_active) + ' ' + str(recv_active)
-                # TODO Resend data after 1 sec
+            while current_frame or recv_active:
+                print('Start of loop: ' + str(send_active) + ' ' + str(recv_active))
+
                 try:
-                    # pass send time and frame
-                    # store as instance value?
-                    chksum, length, recv_frame_id, data, ack, end = recv_valid_synced_frame(sock)
+                    chksum, length, recv_frame_id, data, ack, end = recv_valid_synced_frame(sock, current_frame, send_time)
                 except Exception as e:
-                    print str(e)
+                    print(str(e))
                     break
 
-
                 if not ack:  # Data
-                    if end:
-                        print 'Finishing receive'
-                        recv_active = False
-
-                    print 'Received Data - State: ' + str(send_active) + ' ' + str(recv_active)
+                    print('Received Data - State: ' + str(send_active) + ' ' + str(recv_active))
                     if recv_frame_id != last_frame_id or chksum == last_checksum:
 
-                        if recv_active or (recv_frame_id == last_frame_id):
-                            # New data
-                            if recv_frame_id != last_frame_id:
-                                last_frame_id = recv_frame_id
-                                last_checksum = chksum
+                        # if recv_active or (recv_frame_id == last_frame_id):
+                        # New data
+                        if recv_frame_id != last_frame_id and recv_active:
+                            print('New data')
+                            last_frame_id = recv_frame_id
+                            last_checksum = chksum
 
-                                # write data
-                                out_file.write(data)
+                            # write data
+                            out_file.write(data)
 
-                                # Build new ACK frame
-                                ack_frame = build_frame(recv_frame_id, ack = True)
+                            # Build new ACK frame
+                            ack_frame = build_frame(recv_frame_id, ack = True)
 
+                        print('Sending ACK - ' + str(recv_frame_id))
+                        try:
+                            # Send ack frame
                             sock.send(ack_frame)
+                        except socket.error as e:
+                            print("Socket error occured: " + str(e))
+                        except Exception as e:
+                            print(str(e))
 
-                elif ack and not length and not end:  # ACK
-                    print 'Received Data - ACK: ' + str(send_active) + ' ' + str(recv_active)
+                        if end:
+                            print('Finishing receive')
+                            recv_active = False
+
+                elif ack and (not length) and current_frame:  # ACK
+                    print('Received ACK: ' + str(send_active) + ' ' + str(recv_active))
                     # Check ACK
                     if recv_frame_id == frame_id:
-                        print 'ACK OK - ' + str(frame_id)
+                        print('ACK OK - ' + str(frame_id))
                         
                         if send_active:
                             byte = in_file.read(PACKET_SIZE)
@@ -202,21 +227,29 @@ def main(input_file, output_file, sock):
                             current_frame = build_frame(frame_id,bytearray(byte),
                                             end = (not send_active))
 
-                            # Send current frame
-                            sock.send(current_frame)
-
-                            # get send time
+                            try:
+                                # Send current frame
+                                sock.send(current_frame)
+                                # get send time
+                                send_time = time.time()
+                            except socket.error as e:
+                                print("Socket error occured: " + str(e))
+                            except Exception as e:
+                                print(str(e))
+                        else:
+                            current_frame = ''
+                            print('Finishing Sending')
 
                     else:
-                        print 'ACK NOT OK: Expected ' + str(frame_id) + ' Received: ' + str(recv_frame_id)
-                        break
+                        print('ACK NOT OK: Expected ' + str(frame_id) + ' Received: ' + str(recv_frame_id))
+    print('Finishing')
 
 
 
 if __name__ == '__main__':
 
     if len(sys.argv) < 5:
-        print 'Insufficient number of arguments'
+        print('Insufficient number of arguments')
 
     if sys.argv[1] == '-c':
         conn_type = ACTIVE
