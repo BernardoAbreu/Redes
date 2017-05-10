@@ -7,6 +7,9 @@ import socket
 import struct
 import time
 
+sync_header_bytes = (0xDC,0xC0,0x23,0xC2,0xDC,0xC0,0x23,0xC2)
+
+SYNC_LENGTH = len(sync_header_bytes)
 
 SYNC = 0xDCC023C2
 
@@ -73,7 +76,7 @@ def build_frame(frame_id, data = [], ack = False, end = False):
 
     length = len(data)
 
-    header = struct.pack('!IIHHBB', SYNC, SYNC, 0, length, frame_id, flags)
+    header = struct.pack('!IIHHH', SYNC, SYNC, 0, length, (frame_id<<8)|(flags))
 
     data = struct.pack("!%dB" % len(data), *data)
 
@@ -103,6 +106,8 @@ def get_timeout(start_time):
 
     return MAXTIMEOUT - (0 if timedelta >= MAXTIMEOUT else timedelta)
 
+
+
 def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
     last_sync = 0
     current_sync = 0
@@ -116,11 +121,23 @@ def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
             sock.settimeout(None)
 
         try:
-            while current_sync_unpacked != SYNC or last_sync_unpacked != SYNC:
-                last_sync = current_sync
-                last_sync_unpacked = current_sync_unpacked
-                current_sync = sock.recv(4)
-                current_sync_unpacked = struct.unpack('!I',current_sync)[0]
+            # while current_sync_unpacked != SYNC or last_sync_unpacked != SYNC:
+            #     last_sync = current_sync
+            #     last_sync_unpacked = current_sync_unpacked
+            #     current_sync = sock.recv(4)
+            #     current_sync_unpacked = struct.unpack('!I',current_sync)[0]
+            i = 0
+            sync_header = ''
+            while(i < SYNC_LENGTH):
+                current_byte = sock.recv(1)
+                sync_header += current_byte
+                current_unpacked_byte = struct.unpack("!B", current_byte)[0]
+                if current_unpacked_byte != sync_header_bytes[i]:
+                    i = 0
+                    sync_header = ''
+                else:
+                    i += 1
+
 
             syncless_header = sock.recv(6)
 
