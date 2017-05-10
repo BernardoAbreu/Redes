@@ -148,7 +148,7 @@ def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
                 data = sock.recv(length)
 
 
-            frame = last_sync + current_sync + syncless_header + data
+            frame = sync_header + syncless_header + data
 
             if not checksum(frame):
                 unpacked_data = bytearray(struct.unpack("!%dB" % length, data))
