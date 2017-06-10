@@ -34,14 +34,22 @@ class Message(object):
     def set_client_list(self, client_list):
         self.client_list = list(client_list)
 
+
     def _encode():
         header = struct.pack('!HHHH', self.msg_type, self.source_id,
                                         self.dest_id, self.sequence_number)
 
         if self.msg_type == MessageType.CLIST:
             length = len(self.client_list)
-            data = struct.pack("!H%dB"%length, length, *self.client_list)
+            data = struct.pack("!H%dH"%length, length, *self.client_list)
         elif self.msg_type == MessageType.MSG:
             data = struct.pack("!H%dB"%len(self.msg), len(self.msg), *self.msg)
 
         return header + data
+
+
+    def decode_header(header):
+        msg_type, source_id, dest_id, sequence_number = struct.unpack('!HHHH',
+                                                                        header)
+        
+        return msg_type, source_id, dest_id, sequence_number
