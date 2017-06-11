@@ -47,44 +47,97 @@ class Server(object):
         self.id_pool = IdPool()
 
 
+        self._handlers = [  0,
+                            self._handle_OK,
+                            self._handle_ERRO,
+                            self._handle_OI,
+                            self._handle_FLW,
+                            self._handle_MSG,
+                            self._handle_CREQ,
+                            self._handle_CLIST,
+                        ]
 
-    def _handle_OI(self, s, source_id, sequence_number):
-        print 'OI'
+    def _write_msg(self, s, source_id, dest_id, sequence_number, msg_type, msg = ''):
+        new_msg = Message(source_id, dest_id, sequence_number)
+        new_msg.set_type(msg_type)
+        if msg:
+            if msg_type == MessageType.CLIST:
+                new_msg.set_list(msg)
+            else:
+                new_msg.set_msg(msg)
+
+        self._write_data(s, str(new_msg))
+
+
+    def _handle_OK(self, s, source_id, dest_id, sequence_number):
+        print >>sys.stderr,'OK'
+        if s in self.next_to_remove:
+            self._remove_connection(s)
+
+
+    def _handle_ERRO(self, s, source_id, dest_id, sequence_number):
+        return
+
+    def _handle_OI(self, s, source_id, dest_id, sequence_number):
+        print >>sys.stderr,'OI'
         error = False
 
-        next_id = self.id_pool.get_next_emitter_id() if source_id else self.id_pool.get_next_exhibitor_id()
+        next_id = self.id_pool.get_next_emitter_id(s) if source_id else self.id_pool.get_next_exhibitor_id(s)
 
         if source_id > 4095:
             self.id_pool.associate_clients(next_id, source_id)
 
-        msg = Message(self.id, next_id, sequence_number)
-        msg.set_type(MessageType.OK)
+        # msg = Message(self.id, next_id, sequence_number)
+        # msg.set_type(MessageType.OK)
+        # self._write_data(s, str(msg))
 
-        self._write_data(s, str(msg))
+        self._write_msg(s, self.id, next_id, sequence_number, MessageType.OK)
 
 
-    def _handle_FLW(self, s, source_id, sequence_number):
-        print 'FLW'
+    def _handle_FLW(self, s, source_id, dest_id, sequence_number):
+        print >>sys.stderr,'FLW'
         #TODO check id
+
+        self._write_msg(s, self.id, source_id, sequence_number, MessageType.OK)
+        
         self.id_pool.remove_id(source_id)
-
-        msg = Message(self.id, source_id, sequence_number)
-
-        msg.set_type(MessageType.OK)
-
-        self._write_data(s, str(msg))
 
         self.next_to_remove.append(s)
 
-        # self._remove_connection(s)
+
+    def _handle_MSG(self, s, source_id, dest_id, sequence_number):
+        print >>sys.stderr,'MSG'
+        # print >>sys.stderr,(self.id_pool.get_sock(dest_id)).getpeername()
+        msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
+
+        print >>sys.stderr,'msg_length', msg_length
+
+        msg = s.recv(msg_length)
+        print >>sys.stderr,msg
+
+        associate = self.id_pool.get_associate(source_id)
+        print >>sys.stderr,'associate',associate
+
+        exhibitors = [dest_id] if dest_id else self.id_pool.get_all_exhibitors()
+
+        for e in exhibitors:
+            self._write_msg(self.id_pool.get_sock(e), source_id, e,
+                            sequence_number, MessageType.MSG, msg)
 
 
-    def _handle_MSG(self):
-        print 'MSG'
+    def _handle_CREQ(self, s, source_id, dest_id, sequence_number):
+        print >>sys.stderr,'CREQ'
+        client_list = self.id_pool.get_all_clients()
+
+        exhibitors = [dest_id] if dest_id else self.id_pool.get_all_exhibitors()
+
+        for e in exhibitors:
+            self._write_msg(self.id_pool.get_sock(e), source_id, e,
+                            sequence_number, MessageType.CLIST, client_list)
 
 
-    def _handle_CREQ(self):
-        print 'CREQ'
+    def _handle_CLIST(self, s, source_id, dest_id, sequence_number):
+        self._write_msg(s, self.id, source_id,sequence_number, MessageType.ERRO)
 
 
     def _handle_message(self, s, header):
@@ -93,15 +146,14 @@ class Server(object):
         sys.stderr.write('received "%s" from %s\n' % (header, s.getpeername()))
 
         msg_type, source_id, dest_id, sequence_number = Message.decode_header(header)
-        print msg_type, source_id, dest_id, sequence_number
+        print >>sys.stderr,msg_type, source_id, dest_id, sequence_number
 
+        if msg_type > len(self._handlers) or msg_type == 0:
+            self._write_msg(s, self.id, source_id,sequence_number, MessageType.ERRO)
+        else:
+            self._handlers[msg_type](s, source_id, dest_id, sequence_number)
 
-        if(msg_type == MessageType.OI):
-            self._handle_OI(s, source_id, sequence_number)
-        elif(msg_type == MessageType.FLW):
-            self._handle_FLW(s, source_id, sequence_number)
-        print self.id_pool.get_all_clients()
-
+        print >>sys.stderr,self.id_pool.get_all_clients()
 
 
     def _write_data(self, s, data):
@@ -110,7 +162,6 @@ class Server(object):
         # Add output channel for response
         if s not in self.outputs:
             self.outputs.append(s)
-
 
 
     def _create_connection(self,s):
@@ -125,8 +176,10 @@ class Server(object):
         self.message_queues[connection] = Queue.Queue()
 
 
-
     def _remove_connection(self, s):
+        print >>sys.stderr,'Removing connection ' + str(s.getpeername())
+        self.id_pool.remove_socket_if_exists(s)
+
         # Stop listening for input on the connection
         self.inputs.remove(s)
 
@@ -136,28 +189,30 @@ class Server(object):
         if s in self.next_to_remove:
             self.next_to_remove.remove(s)
 
-        s.close()
-
         # Remove message queue
         del self.message_queues[s]
-
+        
+        s.close()
 
 
     def _handle_input(self, readable):
         # Handle inputs
         for s in readable:
-
             if s is self.server:
                 self._create_connection(s)
             else:
-                header = s.recv(Message.HEADER_SIZE)
+                print >>sys.stderr,'receiving from',s.getpeername()
+                try:
+                    header = s.recv(Message.HEADER_SIZE)
 
-                if header:
-                    self._handle_message(s, header)
-                else:
-                    # Interpret empty result as closed connection
-                    sys.stderr.write('closing %s after reading no data\n'%str(s.getpeername()))
-                    self._remove_connection(s)
+                    if header:
+                        self._handle_message(s, header)
+                    else:
+                        # Interpret empty result as closed connection
+                        sys.stderr.write('closing %s after reading no data\n'%str(s.getpeername()))
+                        self._remove_connection(s)
+                except Exception as e:
+                    print >>sys.stderr,e
 
 
     def _handle_ouput(self, writable):
@@ -169,8 +224,6 @@ class Server(object):
                 # No messages waiting so stop checking for writability.
                 sys.stderr.write('output queue for %s is empty\n'%str(s.getpeername()))
                 self.outputs.remove(s)
-                if s in self.next_to_remove:
-                    self._remove_connection(s)
             else:
                 sys.stderr.write('sending "%s" to %s\n' % (next_msg, s.getpeername()))
                 s.send(next_msg)
@@ -183,11 +236,10 @@ class Server(object):
             self._remove_connection(s)
 
 
-
     def run(self):
         while self.inputs:
             try:
-
+                # print >>sys.stderr,self.inputs
                 # Wait for at least one of the sockets to be ready for processing
                 sys.stderr.write('\nwaiting for the next event\n')
 
@@ -200,10 +252,10 @@ class Server(object):
                 self._handle_ouput(writable)
 
                 self._handle_exceptional(exceptional)
-
             except KeyboardInterrupt:
-                print 'Finishing'
-                self.inputs.remove(self.server)
+                print >>sys.stderr,'Finishing'
+                if self.server in self.inputs:
+                    self.inputs.remove(self.server)
                 for s in self.inputs:
                     msg = Message(self.id, 0, 0)
                     msg.set_type(MessageType.FLW)
@@ -211,8 +263,15 @@ class Server(object):
 
             except Exception as e:
                 sys.stderr.write(str(e)+ '\n')
-                self.server.close()
-                break
+                # self.server.close()
+                if self.server in self.inputs:
+                    self.inputs.remove(self.server)
+                for s in self.inputs:
+                    msg = Message(self.id, 0, 0)
+                    msg.set_type(MessageType.FLW)
+                    self._write_data(s, str(msg))
+
+
 
         self.server.close()
 

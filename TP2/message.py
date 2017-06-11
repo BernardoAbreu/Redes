@@ -14,9 +14,9 @@ class MessageType(object):
 class Message(object):
 
     HEADER_SIZE = 8
+    MSG_SIZE = 2
 
     def __init__(self, source_id, dest_id, sequence_number):
-
         self.msg_type = ''
         self.source_id = source_id
         self.dest_id = dest_id
@@ -30,10 +30,10 @@ class Message(object):
 
 
     def set_msg(self, msg):
-        self.msg_type
+        self.msg = msg
 
 
-    def set_client_list(self, client_list):
+    def set_list(self, client_list):
         self.client_list = list(client_list)
 
 
@@ -46,7 +46,7 @@ class Message(object):
             length = len(self.client_list)
             data = struct.pack("!H%dH"%length, length, *self.client_list)
         elif self.msg_type == MessageType.MSG:
-            data = struct.pack("!H%dB"%len(self.msg), len(self.msg), *self.msg)
+            data = struct.pack("!H%ds"%len(self.msg), len(self.msg), self.msg)
 
         return header + data
 
@@ -64,3 +64,15 @@ class Message(object):
                                                                         header)
         
         return msg_type, source_id, dest_id, sequence_number
+
+    @classmethod
+    def decode_msg_size(cls, size):
+        return int(struct.unpack('!H',size)[0])
+
+    @classmethod
+    def decode_msg(cls, size, msg):
+        return struct.unpack("!%ds"%size, msg)[0]
+
+    @classmethod
+    def decode_list(cls, size, msg):
+        return struct.unpack("!%dH"%size, msg)
