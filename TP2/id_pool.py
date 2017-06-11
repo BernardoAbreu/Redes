@@ -7,7 +7,6 @@ class IdPool(object):
         self.exhibitors = {}
 
 
-
     def _get_next_id(self, minimum_id, pool):
         next_id = minimum_id
         want = minimum_id
@@ -46,7 +45,7 @@ class IdPool(object):
     def remove_id(self, id):
         first, second = (self.emitters, self.exhibitors) if id < 4096 else (self.exhibitors, self.emitters)
 
-        if first:
+        if first[id]:
             second[first[id]] = False
 
         del first[id]
@@ -62,7 +61,7 @@ class IdPool(object):
     def associate_clients(self, emitter, exhibitor):
         if emitter in self.emitters.iterkeys() and exhibitor in self.exhibitors.iterkeys():
             self.emitters[emitter] = exhibitor
-            self.exhibitors[exhibitors] = emitter
+            self.exhibitors[exhibitor] = emitter
             return True
         else:
             return False
