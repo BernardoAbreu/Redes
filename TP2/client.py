@@ -83,7 +83,8 @@ class Client(object):
 
 
     def _handle_ERRO(self, source_id, dest_id, sequence_number):
-        self._send_msg(source_id, sequence_number, MessageType.ERRO)
+        print >>sys.stderr,'\nMensagem de erro recebida'
+        # self._send_msg(source_id, sequence_number, MessageType.ERRO)
 
 
     def _handle_OI(self, source_id, dest_id, sequence_number):
@@ -91,7 +92,7 @@ class Client(object):
 
 
     def _handle_FLW(self, source_id, dest_id, sequence_number):
-        print '\nServer teminated. Finishing'
+        print '\nFLW recebido. Terminando'
         self.finish = True
         #check if source_id is server
         self._send_msg(self.server_id, self.sequence_number, MessageType.OK)
@@ -142,9 +143,9 @@ class Client(object):
             self._finish()
         except socket.error, e:
             sys.stderr.write('SOCKET ERROR: '+ str(e)+ '\n')
-        except Exception as e:
-            sys.stderr.write('ERROR: '+ str(e)+ '\n')
-            self._finish()
+        # except Exception as e:
+        #     sys.stderr.write('ERROR: '+ str(e)+ '\n')
+        #     self._finish()
         finally:
             self.sock.close()
 

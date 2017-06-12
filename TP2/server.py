@@ -69,6 +69,37 @@ class Server(object):
         self._write_data(s, str(new_msg))
 
 
+    def _redirect_msg(self, s, source_id, dest_id, sequence_number, msg, msg_type):
+        error = False
+        if not dest_id:
+            exhibitors = self.id_pool.get_all_exhibitors()
+            for e in exhibitors:
+                self._write_msg(self.id_pool.get_sock(e), source_id, e,
+                                sequence_number, msg_type, msg)
+
+        elif self.id_pool.id_exists(dest_id):
+            if dest_id < 4096:
+                associate = self.id_pool.get_associate(dest_id)
+                print >>sys.stderr,'associate',associate
+                if not associate:
+                    error = True
+                    print >>sys.stderr,'Nenhum exibidor associado a esse emissor'
+                else:
+                    self._write_msg(self.id_pool.get_sock(associate), source_id,
+                                dest_id, sequence_number, msg_type, msg)
+            else:
+                self._write_msg(self.id_pool.get_sock(dest_id), source_id,
+                                dest_id, sequence_number, msg_type, msg)
+        else:
+            error = True
+
+        if error:
+            sys.stderr.write('Enviando mensagem de erro para %d em %s\n' %
+                                (source_id, str(s.getpeername())))
+            self._write_msg(s, self.id, source_id, 
+                                        sequence_number, MessageType.ERRO)
+
+
     def _handle_OK(self, s, source_id, dest_id, sequence_number):
         print >>sys.stderr,'OK'
         if s in self.next_to_remove:
@@ -76,7 +107,8 @@ class Server(object):
 
 
     def _handle_ERRO(self, s, source_id, dest_id, sequence_number):
-        return
+        print >>sys.stderr,'\nMensagem de erro recebida'
+
 
     def _handle_OI(self, s, source_id, dest_id, sequence_number):
         print >>sys.stderr,'OI'
@@ -87,16 +119,20 @@ class Server(object):
         if source_id > 4095:
             self.id_pool.associate_clients(next_id, source_id)
 
-        # msg = Message(self.id, next_id, sequence_number)
-        # msg.set_type(MessageType.OK)
-        # self._write_data(s, str(msg))
-
         self._write_msg(s, self.id, next_id, sequence_number, MessageType.OK)
 
 
     def _handle_FLW(self, s, source_id, dest_id, sequence_number):
         print >>sys.stderr,'FLW'
         #TODO check id
+
+        if source_id < 4096:
+            associate = self.id_pool.get_associate(source_id)
+            print >>sys.stderr,'associate',associate
+            if associate:
+                self._write_msg(self.id_pool.get_sock(associate), self.id,
+                            associate, sequence_number, MessageType.FLW)
+                self.id_pool.remove_id(associate)
 
         self._write_msg(s, self.id, source_id, sequence_number, MessageType.OK)
         
@@ -106,8 +142,10 @@ class Server(object):
 
 
     def _handle_MSG(self, s, source_id, dest_id, sequence_number):
+        error = False
+
         print >>sys.stderr,'MSG'
-        # print >>sys.stderr,(self.id_pool.get_sock(dest_id)).getpeername()
+
         msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
 
         print >>sys.stderr,'msg_length', msg_length
@@ -115,41 +153,54 @@ class Server(object):
         msg = s.recv(msg_length)
         print >>sys.stderr,msg
 
-        associate = self.id_pool.get_associate(source_id)
-        print >>sys.stderr,'associate',associate
-
-        exhibitors = [dest_id] if dest_id else self.id_pool.get_all_exhibitors()
-
-        for e in exhibitors:
-            self._write_msg(self.id_pool.get_sock(e), source_id, e,
-                            sequence_number, MessageType.MSG, msg)
+        self._redirect_msg(s, source_id, dest_id, sequence_number, msg, 
+                        MessageType.MSG)
 
 
     def _handle_CREQ(self, s, source_id, dest_id, sequence_number):
         print >>sys.stderr,'CREQ'
         client_list = self.id_pool.get_all_clients()
 
-        exhibitors = [dest_id] if dest_id else self.id_pool.get_all_exhibitors()
-
-        for e in exhibitors:
-            self._write_msg(self.id_pool.get_sock(e), source_id, e,
-                            sequence_number, MessageType.CLIST, client_list)
+        self._redirect_msg(s, source_id, dest_id, sequence_number, client_list, 
+                        MessageType.CLIST)
 
 
     def _handle_CLIST(self, s, source_id, dest_id, sequence_number):
+        msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
+        msg = s.recv(msg_length*2)
         self._write_msg(s, self.id, source_id,sequence_number, MessageType.ERRO)
 
 
     def _handle_message(self, s, header):
         # A readable client socket has data
-                    
+        error = False
         sys.stderr.write('received "%s" from %s\n' % (header, s.getpeername()))
 
         msg_type, source_id, dest_id, sequence_number = Message.decode_header(header)
         print >>sys.stderr,msg_type, source_id, dest_id, sequence_number
 
-        if msg_type > len(self._handlers) or msg_type == 0:
+        print >>sys.stderr,'msg_type',msg_type
+
+        if msg_type != MessageType.OI:
+
+            if not self.id_pool.id_exists(source_id):
+                error = True
+            elif s is not self.id_pool.get_sock(source_id):
+                error = True
+
+        print >>sys.stderr,'msg_type',msg_type
+
+        if msg_type > len(self._handlers) or msg_type == 0 or error:
+
+            if msg_type == MessageType.MSG:
+                msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
+                msg = s.recv(msg_length)
+            elif msg_type == MessageType.CLIST:
+                msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
+                msg = s.recv(msg_length*2)
+
             self._write_msg(s, self.id, source_id,sequence_number, MessageType.ERRO)
+
         else:
             self._handlers[msg_type](s, source_id, dest_id, sequence_number)
 
@@ -277,5 +328,5 @@ class Server(object):
 
 
 if __name__ == '__main__':
-    s = Server('127.0.0.1', 51515,2)
+    s = Server('127.0.0.1', 51515,255)
     s.run()
