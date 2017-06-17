@@ -39,31 +39,42 @@ class EmitterClient(Client):
                             if 0 < next_state < 3:
                                 self.state = next_state
                         except ValueError:
-                            print 'Type a number'
+                            print 'Escreva um numero'
                     elif self.state == 3:
                         self._send_msg(self.destiny, self.sequence_number, MessageType.MSG, data)
+                        self.sequence_number += 1
+                        self.sequence_number = self.sequence_number%65536
                         self.state = 0
                     else:
                         try:
                             self.destiny = int(data)
                             if self.state == 1:
                                 self._send_msg(self.destiny, self.sequence_number, MessageType.CREQ)
+                                self.sequence_number += 1
+                                self.sequence_number = self.sequence_number%65536
                                 self.state = 0
                             elif self.state == 2:
                                 self.state = 3
                         except ValueError:
-                            print 'Type a number'
+                            print 'Escreva um numero'
             elif i == self.sock:
                 self._handle_recv()
 
 
 
 if __name__ == "__main__":
-    # import sys
+    if len(sys.argv)<2 or len(sys.argv) > 3:
+        sys.exit('Numero incorreto de argumentos.\nUso: endereco_ip:porto [id_exibidor]')
+    else:
+        ip, port = sys.argv[1].split(':')
 
-    # if len(sys.argv)<2:
-    #     sys.exit('Usage: %s chatid host portno' % sys.argv[0])
+        chosen_id = 1
 
-    # client = Client(sys.argv[1],sys.argv[2], int(sys.argv[3]))
-    c = EmitterClient('127.0.0.1', 51515, 1 if len(sys.argv) < 2 else int(sys.argv[1]))
-    c.run()
+        if len(sys.argv) == 3:
+            chosen_id = int(sys.argv[2])
+            if chosen_id > 8191 or chosen_id < 1:
+                sys.stderr.write('Id nao suportado\n')
+                sys.exit()
+
+        c = EmitterClient(ip, int(port), chosen_id)
+        c.run()

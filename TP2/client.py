@@ -45,6 +45,12 @@ class Client(object):
 
         if(msg_type == MessageType.OK):
             self.id = dest_id
+            print('Seu identificador: ' + str(self.id))
+            self.sequence_number += 1
+        else:
+            print >>sys.stderr, 'Erro estabelecendo id.'
+            id = 0
+            self.finish = True
 
 
     def _finish(self):
@@ -136,7 +142,6 @@ class Client(object):
     def run(self):
         try:
             self.open_connection()
-            print('Seu identificador: ' + str(self.id))
             while not self.finish:
                 self._command_loop()
         except KeyboardInterrupt:
@@ -147,6 +152,7 @@ class Client(object):
         #     sys.stderr.write('ERROR: '+ str(e)+ '\n')
         #     self._finish()
         finally:
+            print('Terminando')
             self.sock.close()
 
 

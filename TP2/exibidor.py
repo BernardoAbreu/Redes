@@ -38,5 +38,10 @@ class ExhibitorClient(Client):
 
 
 if __name__ == '__main__':
-    c = ExhibitorClient('127.0.0.1', 51515)
-    c.run()
+
+    if len(sys.argv) != 2:
+        sys.exit('Numero incorreto de argumentos.\nUso: endereco_ip:porto')
+    else:
+        ip, port = sys.argv[1].split(':')
+        c = ExhibitorClient(ip, int(port))
+        c.run()
