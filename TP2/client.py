@@ -85,7 +85,7 @@ class Client(object):
 
 
     def _handle_OK(self, source_id, dest_id, sequence_number):
-        self._send_msg(source_id, sequence_number, MessageType.ERRO)
+        return
 
 
     def _handle_ERRO(self, source_id, dest_id, sequence_number):
@@ -98,10 +98,14 @@ class Client(object):
 
 
     def _handle_FLW(self, source_id, dest_id, sequence_number):
-        print '\nFLW recebido. Terminando'
-        self.finish = True
+        print '\nFLW recebido.'
         #check if source_id is server
-        self._send_msg(self.server_id, self.sequence_number, MessageType.OK)
+
+        if source_id == self.server_id:
+            self.finish = True
+            self._send_msg(self.server_id, self.sequence_number, MessageType.OK)
+        else:
+            self._send_msg(source_id, sequence_number, MessageType.ERRO)
 
 
     def _handle_MSG(self, source_id, dest_id, sequence_number):

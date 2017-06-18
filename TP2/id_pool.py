@@ -13,12 +13,9 @@ class IdPool(object):
         want = minimum_id
 
         for i in pool:
-            print i
             if i > want:
-                print 1
                 break
             elif i == want:
-                print 2
                 want += 1
         next_id = want
 

@@ -19,21 +19,21 @@ class ExhibitorClient(Client):
 
 
     def _handle_MSG(self, source_id, dest_id, sequence_number):
-        print 'MSG'
         msg_length = Message.decode_msg_size(self.sock.recv(2))
         msg = Message.decode_msg(msg_length,self.sock.recv(msg_length))
 
         print 'Mensagem de ' + str(source_id) + ': ' + msg
+        self._send_msg(source_id, sequence_number, MessageType.OK)
 
 
     def _handle_CLIST(self, source_id, dest_id, sequence_number):
-        print 'CLIST'
         msg_length = Message.decode_msg_size(self.sock.recv(Message.MSG_SIZE))
 
         msg = Message.decode_list(msg_length,self.sock.recv(msg_length*2))
-        self._send_msg(source_id, self.sequence_number, MessageType.OK)
 
         print 'Clientes conectados: ' + ', '.join(map(str,msg))
+
+        self._send_msg(source_id, sequence_number, MessageType.OK)
 
 
 

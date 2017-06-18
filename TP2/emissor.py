@@ -23,6 +23,10 @@ class EmitterClient(Client):
         self.destiny = self.server_id
 
 
+
+    def _handle_OK(self, source_id, dest_id, sequence_number):
+        print
+
     def _command_loop(self):
         sys.stderr.write(self.prompt[self.state])
         # Wait for input from stdin & socket
@@ -30,8 +34,7 @@ class EmitterClient(Client):
         for i in readable:
             if i == sys.stdin:
                 data = sys.stdin.readline().strip()
-                if data: 
-                    print data
+                if data:
 
                     if self.state == 0:
                         try:

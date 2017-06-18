@@ -56,6 +56,7 @@ class Server(object):
                             self._handle_CLIST,
                         ]
 
+
     def _write_msg(self, s, source_id, dest_id, sequence_number, msg_type, msg = ''):
         new_msg = Message(source_id, dest_id, sequence_number)
         new_msg.set_type(msg_type)
@@ -80,7 +81,6 @@ class Server(object):
         elif self.id_pool.id_exists(dest_id):
             if dest_id < 4096:
                 associate = self.id_pool.get_associate(dest_id)
-                print >>sys.stderr,'associate',associate
                 if not associate:
                     error = True
                     print >>sys.stderr,'Nenhum exibidor associado a esse emissor'
@@ -131,7 +131,7 @@ class Server(object):
 
         if source_id < 4096:
             associate = self.id_pool.get_associate(source_id)
-            print >>sys.stderr,'associate',associate
+
             if associate:
                 associate_sock = self.id_pool.get_sock(associate)
                 new_msg = Message(self.id, associate, sequence_number)
@@ -156,13 +156,12 @@ class Server(object):
 
         msg_length = Message.decode_msg_size(s.recv(Message.MSG_SIZE))
 
-        print >>sys.stderr,'msg_length', msg_length
-
         msg = s.recv(msg_length)
-        print >>sys.stderr,msg
 
         self._redirect_msg(s, source_id, dest_id, sequence_number, msg, 
                         MessageType.MSG)
+
+        self._write_msg(s, self.id, source_id, sequence_number, MessageType.OK)
 
 
     def _handle_CREQ(self, s, source_id, dest_id, sequence_number):
@@ -171,6 +170,7 @@ class Server(object):
 
         self._redirect_msg(s, source_id, dest_id, sequence_number, client_list, 
                         MessageType.CLIST)
+        self._write_msg(s, self.id, source_id, sequence_number, MessageType.OK)        
 
 
     def _handle_CLIST(self, s, source_id, dest_id, sequence_number):
@@ -187,16 +187,12 @@ class Server(object):
         msg_type, source_id, dest_id, sequence_number = Message.decode_header(header)
         print >>sys.stderr,msg_type, source_id, dest_id, sequence_number
 
-        print >>sys.stderr,'msg_type',msg_type
-
         if msg_type != MessageType.OI:
 
             if not self.id_pool.id_exists(source_id):
                 error = True
             elif s is not self.id_pool.get_sock(source_id):
                 error = True
-
-        print >>sys.stderr,'msg_type',msg_type
 
         if msg_type > len(self._handlers) or msg_type == 0 or error:
 
@@ -211,8 +207,6 @@ class Server(object):
 
         else:
             self._handlers[msg_type](s, source_id, dest_id, sequence_number)
-
-        print >>sys.stderr,self.id_pool.get_all_clients()
 
 
     def _write_data(self, s, data):
