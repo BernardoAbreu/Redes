@@ -13,25 +13,36 @@ RESPONSE = 3
 TTL = 3
 
 MSG_TYPE_SIZE = 2
-HEADER_SIZE = 18
-MAX_QUERY_SIZE = 60
+HEADER_SIZE = 12
+MAX_KEY_SIZE = 40
+MAX_VALUE_SIZE = 160
 
-MAX_SIZE = MAX_QUERY_SIZE
+
+MAX_REQ_SIZE = MSG_TYPE_SIZE + MAX_KEY_SIZE + 1
+
+MAX_QUERY_SIZE = MSG_TYPE_SIZE + HEADER_SIZE + MAX_KEY_SIZE + 1
+
+MAX_RESPONSE_SIZE = MSG_TYPE_SIZE + MAX_KEY_SIZE + 1 + MAX_VALUE_SIZE + 1
+
+MAX_SIZE = max(MAX_REQ_SIZE, MAX_QUERY_SIZE)
+
+
 
 class Servent(object):
 
     def __init__(self, port, input_file, neighbors):
-        self.port = port
+        self.port = int(port)
         self.input_file = input_file
         self.sock = socket.socket(socket.AF_INET, # Internet
                      socket.SOCK_DGRAM) # UDP
-        self.sock.bind(('', port))
+
+        self.sock.bind(('', self.port))
 
         self.neighbors = [(x[0], int(x[1])) 
                         for x in map(methodcaller("split", ":"), neighbors)]
 
         self.values = self.__read_input()
-        self.sequence_number = 0
+        self.seq_number = 0
         self._handlers = (self.__handle_CLIREQ, self.__handle_QUERY)
 
         self.received_msgs = set()
@@ -53,10 +64,10 @@ class Servent(object):
     def __encode_query(self, ttl, addr, sequence_number, text):
         ip, port = addr
         header1 = struct.pack('!HH', QUERY, ttl)
-        header2 = struct.pack('=4sl', socket.inet_aton(ip), socket.INADDR_ANY)
+        header2 = socket.inet_aton(ip)
         header3 = struct.pack('!HI', port, sequence_number)
 
-        return (header1 + header2 + header3 + text)
+        return (header1 + header2 + header3 + text + '\0')
 
 
     def __encode_response(self, key, value):
@@ -67,10 +78,9 @@ class Servent(object):
 
     def __decode_query_header(self, header):
         ttl = struct.unpack('!H',header[:2])[0]
-        ip,ay  = struct.unpack('=4sl',header[2:10])
-        port,seq_number = struct.unpack('!HI', header[10:16])
-        ip =  socket.inet_ntoa(ip)
-        print ttl,ip,port,seq_number
+        ip =  socket.inet_ntoa(header[2:6])
+        port,seq_number = struct.unpack('!HI', header[6:12])
+
         return ttl,ip,port,seq_number
 
 
@@ -92,13 +102,12 @@ class Servent(object):
     def __handle_CLIREQ(self, key, client_address):
         print 'CLIREQ'
 
-        msg = self.__encode_query(TTL, client_address, 
-                self.sequence_number, key)
+        msg = self.__encode_query(TTL, client_address, self.seq_number, key)
 
         ip, port = client_address
-        self.received_msgs.add((ip, port, self.sequence_number, key))
+        self.received_msgs.add((ip, port, self.seq_number, key))
 
-        self.sequence_number += 1
+        self.seq_number += 1
 
         for neighbor in self.neighbors:
             print neighbor
@@ -111,10 +120,12 @@ class Servent(object):
     def __handle_QUERY(self, message_body, source_neighbor_addr):
         print 'QUERY'
 
-        header = message_body[:(HEADER_SIZE-MSG_TYPE_SIZE)]
-        key = message_body[(HEADER_SIZE-MSG_TYPE_SIZE):]
+        header = message_body[:HEADER_SIZE]
+        key = message_body[HEADER_SIZE:]
 
         ttl, ip, port, seq_number = self.__decode_query_header(header)
+
+        print ttl,ip,port,seq_number
 
         if (ip, port, seq_number, key) not in self.received_msgs:
             self.received_msgs.add((ip, port, seq_number, key))
@@ -134,10 +145,15 @@ class Servent(object):
             print "Already received"
 
 
-    def __handle_recv(self, data, addr):
+    def __recv(self):
 
-        print "received message:", data
+        data, addr = self.sock.recvfrom(MAX_SIZE)
+
+        print "received message",len(data),":", data
         print 'from:',addr
+
+        if data[-1] == '\0':
+            data = data[:-1]
 
         msg_type = self.__decode_msg_type(data[:MSG_TYPE_SIZE])
 
@@ -152,9 +168,7 @@ class Servent(object):
     def run(self):
 
         while True:
-            data, addr = self.sock.recvfrom(MAX_SIZE)
-
-            self.__handle_recv(data,addr)
+            self.__recv()
 
 
 
