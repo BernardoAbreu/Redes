@@ -37,38 +37,47 @@ class Client(object):
         for s in readable:
             data, addr = s.recvfrom(MAX_RESPONSE_SIZE)
 
-            msg_type =  struct.unpack('!H',data[:2])[0]
-            print msg_type
+            msg_type =  struct.unpack('!H',data[:MSG_TYPE_SIZE])[0]
+
             if msg_type == RESPONSE:
-                print 'RESPONSE from:',addr
-                print "received message", len(data[2:]), ':', data[2:]
+                print '\nResposta de %s na porta %d:'%addr
+                print data[MSG_TYPE_SIZE:]
+            else:
+                print '\nTipo inesperado de mensagem.'
             
 
-    def __handle_recv(self):
+    def __issue_request(self, key):
         wait_answers = True
+        retransmit = True
+
+        message = self.__encode_request(key)
+
+        self.sock.sendto(message, self.addr)
+
         while wait_answers:
-            # Wait for at least one of the sockets to be ready for processing
-            print >>sys.stderr, '\nwaiting for the next event'
             r, w, x = select.select([self.sock], [], [], TIMEOUT)
 
             if not (r or w or x):
-                print >>sys.stderr, '  timed out, do some other work here'
-                wait_answers = False
+                if retransmit:
+                    self.sock.sendto(message, self.addr)
+                    retransmit = False
+                else:
+                    wait_answers = False
             else:
+                retransmit = False
                 self.__handle_input(r)
+
+        print '\nNao ha mais respostas.\n'
 
 
     def run(self):
+        try:
+            while True:
+                key = raw_input('Digite uma chave para ser pesquisada: ')
 
-        while True:
-
-            key = raw_input('Digite uma chave para ser pesquisada: ')
-
-            self.message = self.__encode_request(key)
-
-            self.sock.sendto(self.message, self.addr)
-
-            self.__handle_recv()
+                self.__issue_request(key)
+        except KeyboardInterrupt:
+            print('\nTerminando.')
 
 
 
