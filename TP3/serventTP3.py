@@ -41,16 +41,33 @@ class Servent(object):
         self.neighbors = [(x[0], int(x[1])) 
                         for x in map(methodcaller("split", ":"), neighbors)]
 
-        self.values = self.__read_input()
+        self.values = self.__read_input(self.input_file)
         self.seq_number = 0
         self._handlers = (self.__handle_CLIREQ, self.__handle_QUERY)
 
         self.received_msgs = set()
 
 
-    def __read_input(self):
+    def __read_input(self, input_file):
+        """ Returns a dictionary of key - value read from a file.
+
+            Uses regular expression to match lines that contains at least two
+            words separated by whitespaces. Lines that start with '#' are
+            ignored are not matched, but the character can appear after that.
+            The first word is stored in group 1, and the rest is stored in
+            group 2. For both groups, trailing and starting spaces are removed
+            by the RE. A new entry to the dictinonary is created with group(1)
+            as key and group(2) as value.
+
+            Args:
+                input_file (int): The file that contains the keys and values
+
+            Returns:
+                dict: The dictionary created with the keys and values
+        """
+
         pattern = re.compile(r'^\s*([^#\s][^\s]*)\s*([^\s].*[^\s]|[^\s])\s*$')
-        with open(self.input_file, 'r') as f:
+        with open(input_file, 'r') as f:
             return {line.group(1) : line.group(2)
                     for line in map(pattern.match, f) if line is not None}
 
