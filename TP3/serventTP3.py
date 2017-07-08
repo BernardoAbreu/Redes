@@ -49,7 +49,7 @@ class Servent(object):
 
 
     def __read_input(self):
-        pattern = re.compile(r'^\s*([^#\s][^\s]+)\s*([^\s].+[^\s])\s*$')
+        pattern = re.compile(r'^\s*([^#\s][^\s]*)\s*([^\s].+[^\s])\s*$')
         with open(self.input_file, 'r') as f:
             return {line.group(1) : line.group(2)
                     for line in map(pattern.match, f) if line is not None}
@@ -86,17 +86,18 @@ class Servent(object):
 
     def __send_response(self, client_address, key, value):
         response = self.__encode_response(key, value)
-        print 'response', response
-        # make header
+
         self.sock.sendto(response, client_address)
 
 
     def __check_for_key(self, client_address, key):
-
+        print 'Procurando por:', key
         if key in self.values:
             value = self.values[key]
-            print 'value', value
+            print 'Valor de',key, 'encontrado:',value
             self.__send_response(client_address, key, value)
+        else:
+            print 'Valor de',key, 'nao encontrado.'
 
 
     def __handle_CLIREQ(self, key, client_address):
@@ -110,10 +111,8 @@ class Servent(object):
         self.seq_number += 1
 
         for neighbor in self.neighbors:
-            print neighbor
-            print msg
             self.sock.sendto(msg, neighbor)
-        print 'here'
+
         self.__check_for_key(client_address, key)
 
 
@@ -125,8 +124,6 @@ class Servent(object):
 
         ttl, ip, port, seq_number = self.__decode_query_header(header)
 
-        print ttl,ip,port,seq_number
-
         if (ip, port, seq_number, key) not in self.received_msgs:
             self.received_msgs.add((ip, port, seq_number, key))
             self.__check_for_key((ip, port), key)
@@ -136,39 +133,29 @@ class Servent(object):
             if ttl > 0:
                 msg = self.__encode_query(ttl, (ip, port), seq_number, key)
                 for neighbor in self.neighbors:
-                    print neighbor,
                     if neighbor != source_neighbor_addr:
-                        print ' ok',
+
                         self.sock.sendto(msg, neighbor)
-                    print
-        else:
-            print "Already received"
 
 
     def __recv(self):
 
         data, addr = self.sock.recvfrom(MAX_SIZE)
 
-        print "received message",len(data),":", data
-        print 'from:',addr
-
-        if data[-1] == '\0':
-            data = data[:-1]
-
         msg_type = self.__decode_msg_type(data[:MSG_TYPE_SIZE])
 
-        print msg_type
-
         try:
-            self._handlers[msg_type-1](data[MSG_TYPE_SIZE:], addr)
+            self._handlers[msg_type-1](data[MSG_TYPE_SIZE:-1], addr)
         except IndexError:
-            print >>sys.stderr, 'Unsupported message type'
+            print >>sys.stderr, 'Tipo de mensagem nao suportado.'
 
 
     def run(self):
-
-        while True:
-            self.__recv()
+        try:
+            while True:
+                self.__recv()
+        except KeyboardInterrupt:
+            print '\nTerminando.'
 
 
 
