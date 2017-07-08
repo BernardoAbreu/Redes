@@ -49,7 +49,7 @@ class Servent(object):
 
 
     def __read_input(self):
-        pattern = re.compile(r'^\s*([^#\s][^\s]*)\s*([^\s].+[^\s])\s*$')
+        pattern = re.compile(r'^\s*([^#\s][^\s]*)\s*([^\s].*[^\s]|[^\s])\s*$')
         with open(self.input_file, 'r') as f:
             return {line.group(1) : line.group(2)
                     for line in map(pattern.match, f) if line is not None}
