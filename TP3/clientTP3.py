@@ -77,7 +77,9 @@ class Client(object):
 
                 self.__issue_request(key)
         except KeyboardInterrupt:
-            print('\nTerminando.')
+            print '\nTerminando.'
+        except EOFError:
+            print '\nTerminando.'
 
 
 

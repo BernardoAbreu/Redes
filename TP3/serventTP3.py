@@ -156,6 +156,8 @@ class Servent(object):
                 self.__recv()
         except KeyboardInterrupt:
             print '\nTerminando.'
+        except EOFError:
+            print '\nTerminando.'
 
 
 
