@@ -67,9 +67,13 @@ class Servent(object):
         """
 
         pattern = re.compile(r'^\s*([^#\s][^\s]*)\s*([^\s].*[^\s]|[^\s])\s*$')
-        with open(input_file, 'r') as f:
-            return {line.group(1) : line.group(2)
-                    for line in map(pattern.match, f) if line is not None}
+        try:
+            with open(input_file, 'r') as f:
+                return {line.group(1) : line.group(2)
+                        for line in map(pattern.match, f) if line is not None}
+        except IOError:
+            print >>sys.stderr, 'Error ao tentar ler arquivo.'
+            sys.exit(0)
 
 
     def __decode_msg_type(self, msg_type):
@@ -101,10 +105,17 @@ class Servent(object):
         return ttl,ip,port,seq_number
 
 
+    def __send_msg(self, msg, address):
+        try:
+            self.sock.sendto(msg, address)
+        except socket.error:
+            print >>sys.stderr, 'Erro ao tentar enviar para', address
+
+
     def __send_response(self, client_address, key, value):
         response = self.__encode_response(key, value)
 
-        self.sock.sendto(response, client_address)
+        self.__send_msg(response, client_address)
 
 
     def __check_for_key(self, client_address, key):
@@ -128,7 +139,7 @@ class Servent(object):
         self.seq_number += 1
 
         for neighbor in self.neighbors:
-            self.sock.sendto(msg, neighbor)
+            self.__send_msg(msg, neighbor)
 
         self.__check_for_key(client_address, key)
 
@@ -151,20 +162,20 @@ class Servent(object):
                 msg = self.__encode_query(ttl, (ip, port), seq_number, key)
                 for neighbor in self.neighbors:
                     if neighbor != source_neighbor_addr:
-
-                        self.sock.sendto(msg, neighbor)
+                        self.__send_msg(msg, neighbor)
 
 
     def __recv(self):
-
-        data, addr = self.sock.recvfrom(MAX_SIZE)
-
-        msg_type = self.__decode_msg_type(data[:MSG_TYPE_SIZE])
-
         try:
+            data, addr = self.sock.recvfrom(MAX_SIZE)
+
+            msg_type = self.__decode_msg_type(data[:MSG_TYPE_SIZE])
+
             self._handlers[msg_type-1](data[MSG_TYPE_SIZE:-1], addr)
         except IndexError:
             print >>sys.stderr, 'Tipo de mensagem nao suportado.'
+        except socket.error:
+            print >>sys.stderr, 'Erro de socket.'
 
 
     def run(self):
