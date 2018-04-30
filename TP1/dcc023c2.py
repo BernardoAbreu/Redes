@@ -6,7 +6,7 @@ import socket
 import struct
 import time
 
-sync_header_bytes = (0xDC,0xC0,0x23,0xC2,0xDC,0xC0,0x23,0xC2)
+sync_header_bytes = (0xDC, 0xC0, 0x23, 0xC2, 0xDC, 0xC0, 0x23, 0xC2)
 
 SYNC_LENGTH = len(sync_header_bytes)
 
@@ -19,19 +19,20 @@ ACTIVE = 1
 
 MAXTIMEOUT = 1
 
+
 def _carry_around_add(a, b):
     c = a + b
     return (c & 0xffff) + (c >> 16)
+
 
 def checksum(msg):
     s = 0
     if len(msg) % 2 == 1:
             msg += "\0"
-    for i in range(0, len(msg),2):
-        w = (ord(msg[i]) << 8) + (ord(msg[i+1]))
+    for i in range(0, len(msg), 2):
+        w = (ord(msg[i]) << 8) + (ord(msg[i + 1]))
         s = _carry_around_add(s, w)
     return (~s) & 0xffff
-
 
 
 class Emulator(object):
@@ -63,8 +64,7 @@ class Emulator(object):
         return conn
 
 
-
-def build_frame(frame_id, data = [], ack = False, end = False):
+def build_frame(frame_id, data=[], ack=False, end=False):
     # header
 
     # Adiciona as flags de ack e end
@@ -78,11 +78,12 @@ def build_frame(frame_id, data = [], ack = False, end = False):
     length = len(data)
 
     # Usa o a funcao pack para colocar os bytes em network byte order
-    header = struct.pack('!IIHHH', SYNC, SYNC, 0, length, (frame_id<<8)|(flags))
+    header = struct.pack('!IIHHH', SYNC, SYNC, 0, length,
+                         (frame_id << 8) | (flags))
 
     data = struct.pack("!%dB" % len(data), *data)
 
-    frame_str = header+data
+    frame_str = header + data
 
     # Calcula o checksum
     chcksum = checksum(frame_str)
@@ -96,11 +97,10 @@ def build_frame(frame_id, data = [], ack = False, end = False):
     return frame_str
 
 
-
 def decode_header(syncless_header):
     ''' Obtem as informacoes do header '''
 
-    chksum,length,frame_id, flags = struct.unpack('!HHBB',syncless_header)
+    chksum, length, frame_id, flags = struct.unpack('!HHBB', syncless_header)
     ack = bool(flags & 0x80)
     end = bool(flags & 0x40)
     return chksum, length, frame_id, ack, end
@@ -108,7 +108,8 @@ def decode_header(syncless_header):
 
 def get_timeout(start_time):
     ''' Verifica quanto tempo deve ser usado pelo timeout de acordo
-    com o tempo de inicio e o tempo atual e com um valor maximo de MAXTIMEOUT'''
+    com o tempo de inicio e o tempo atual e com um valor maximo de MAXTIMEOUT
+    '''
 
     current_time = time.time()
     timedelta = current_time - start_time
@@ -116,15 +117,9 @@ def get_timeout(start_time):
     return MAXTIMEOUT - (0 if timedelta >= MAXTIMEOUT else timedelta)
 
 
-
-def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
+def recv_valid_synced_frame(sock, resend_frame='', start_time=0):
     ''' Recebe bytes ate encontrar um frame sincronizado e valido, ou seja,
     sem erro de checksum'''
-
-    last_sync = 0
-    current_sync = 0
-    current_sync_unpacked = 0
-    last_sync_unpacked = 0
 
     while True:
         if resend_frame:
@@ -165,9 +160,6 @@ def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
             if not checksum(frame):
                 unpacked_data = bytearray(struct.unpack("!%dB" % length, data))
                 return chksum, length, frame_id, unpacked_data, ack, end
-            else:
-                current_sync = 0
-                current_sync_unpacked = 0
 
         except socket.timeout:
             # Caso ocorra timeout e existe um pacote que esta esperando o ack
@@ -178,7 +170,6 @@ def recv_valid_synced_frame(sock, resend_frame = '', start_time = 0):
                 start_time = time.time()
         except Exception as e:
             raise e
-
 
 
 def main(input_file, output_file, sock):
@@ -197,7 +188,8 @@ def main(input_file, output_file, sock):
                 send_active = False
 
             # Constroi primeiro frame e o envia
-            current_frame = build_frame(frame_id,bytearray(byte), end = (not send_active))
+            current_frame = build_frame(frame_id, bytearray(byte),
+                                        end=(not send_active))
             sock.send(current_frame)
 
             # Obtem tempo de envio do pacote para cálculo do timeout
@@ -206,18 +198,16 @@ def main(input_file, output_file, sock):
             # Repete enquanto a transmissao do arquivo local nao terminou ou o
             # arquivo que esta recebido ainda nao terminou
             while current_frame or recv_active:
-                # print('Start of loop: ' + str(send_active) + ' ' + str(recv_active))
-
                 try:
-                    chksum, length, recv_frame_id, data, ack, end = recv_valid_synced_frame(sock, current_frame, send_time)
+                    chksum, length, recv_frame_id, data, ack, end = \
+                        recv_valid_synced_frame(sock, current_frame, send_time)
                 except Exception as e:
                     print(str(e))
                     break
 
-
                 if not ack:  # Recebeu dados
-                    # print('Received Data - State: ' + str(send_active) + ' ' + str(recv_active))
-                    if recv_frame_id != last_frame_id or chksum == last_checksum:
+                    if recv_frame_id != last_frame_id or \
+                            chksum == last_checksum:
 
                         # New data
                         if recv_frame_id != last_frame_id and recv_active:
@@ -229,7 +219,7 @@ def main(input_file, output_file, sock):
                             out_file.write(data)
 
                             # Build new ACK frame
-                            ack_frame = build_frame(recv_frame_id, ack = True)
+                            ack_frame = build_frame(recv_frame_id, ack=True)
 
                         # print('Sending ACK - ' + str(recv_frame_id))
                         try:
@@ -245,7 +235,6 @@ def main(input_file, output_file, sock):
                             recv_active = False
 
                 elif ack and (not length) and current_frame:  # Recebeu um ack
-                    # print('Received ACK: ' + str(send_active) + ' ' + str(recv_active))
                     # Confere se o ACK está correto
                     if recv_frame_id == frame_id:
                         # print('ACK OK - ' + str(frame_id))
@@ -265,8 +254,9 @@ def main(input_file, output_file, sock):
 
                             # Constroi o frame dos dados que
                             # acabaram de ser lidos
-                            current_frame = build_frame(frame_id,bytearray(byte),
-                                            end = (not send_active))
+                            current_frame = build_frame(frame_id,
+                                                        bytearray(byte),
+                                                        end=(not send_active))
 
                             try:
                                 # Envia o frame atual
@@ -282,9 +272,9 @@ def main(input_file, output_file, sock):
                             print('Finishing Sending')
 
                     else:
-                        print('ACK NOT OK: Expected ' + str(frame_id) + ' Received: ' + str(recv_frame_id))
+                        print('ACK NOT OK: Expected ' + str(frame_id) +
+                              ' Received: ' + str(recv_frame_id))
     print('Finishing')
-
 
 
 if __name__ == '__main__':
